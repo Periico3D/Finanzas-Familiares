@@ -37,12 +37,12 @@ const defaultData = {
     {id:3, nombre:"Reforma Cocina", actual:2500, objetivo:8000},
   ],
   historial: [
-    {mes:"Nov", ingresos:5400, gastos:2100},
-    {mes:"Dic", ingresos:5600, gastos:2800},
-    {mes:"Ene", ingresos:5600, gastos:2200},
-    {mes:"Feb", ingresos:5600, gastos:2050},
-    {mes:"Mar", ingresos:5900, gastos:2300},
-    {mes:"Abr", ingresos:5600, gastos:2000},
+    {mes:"Nov", anio:2025, ingresos:5400, gastos:2100},
+    {mes:"Dic", anio:2025, ingresos:5600, gastos:2800},
+    {mes:"Ene", anio:2026, ingresos:5600, gastos:2200},
+    {mes:"Feb", anio:2026, ingresos:5600, gastos:2050},
+    {mes:"Mar", anio:2026, ingresos:5900, gastos:2300},
+    {mes:"Abr", anio:2026, ingresos:5600, gastos:2000},
   ],
   alertas_config: {
     balance_minimo:500, deuda_max_ingreso_pct:40,
@@ -53,6 +53,8 @@ const defaultData = {
 // ─── State ─────────────────────────────────────────────────────────────────────
 let data = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null") || defaultData;
 let activeTab = "resumen";
+let historialAnio = new Date().getFullYear();
+let historialVista = "mes"; // "mes" | "anio"
 let modalState = null;
 let formData = {};
 let savedTimer = null;
@@ -273,6 +275,110 @@ const openPdfModal = () => {
 };
 
 // ─── Tab renders ───────────────────────────────────────────────────────────────
+// ─── Historial helpers ─────────────────────────────────────────────────────────
+const MESES_ORDEN = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+const aniosDisponibles = () => [...new Set(data.historial.map(h=>h.anio))].sort();
+
+const historialFiltrado = () => {
+  if (historialVista === "anio") {
+    // Agrupa por año
+    const map = {};
+    data.historial.forEach(h => {
+      if (!map[h.anio]) map[h.anio] = {mes:String(h.anio), anio:h.anio, ingresos:0, gastos:0};
+      map[h.anio].ingresos += h.ingresos;
+      map[h.anio].gastos += h.gastos;
+    });
+    return Object.values(map).sort((a,b)=>a.anio-b.anio);
+  }
+  // Vista mensual: filtra por año seleccionado, ordena por mes
+  return data.historial
+    .filter(h => h.anio === historialAnio)
+    .sort((a,b) => MESES_ORDEN.indexOf(a.mes) - MESES_ORDEN.indexOf(b.mes));
+};
+
+const historialNavBar = (onPrev, onNext, onToggle) => {
+  const anios = aniosDisponibles();
+  const minAnio = anios[0] || historialAnio;
+  const maxAnio = anios[anios.length-1] || historialAnio;
+  const nav = el("div", {style:"display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap"});
+  nav.innerHTML = `<h2 style="margin:0;flex:1">Evolución histórica</h2>`;
+
+  const toggleBtn = el("button", {class:"btn", style:`font-size:11px;padding:4px 10px;${historialVista==="anio"?"background:var(--bg2);font-weight:500":""}`, onClick: onToggle},
+    historialVista === "mes" ? "Ver por año" : "Ver por mes");
+
+  if (historialVista === "mes") {
+    const prevBtn = el("button", {class:"btn", style:"font-size:14px;padding:2px 10px", onClick: onPrev}, "‹");
+    const anioLabel = el("span", {style:"font-size:13px;font-weight:500;min-width:40px;text-align:center"}, String(historialAnio));
+    const nextBtn = el("button", {class:"btn", style:"font-size:14px;padding:2px 10px", onClick: onNext}, "›");
+    if (historialAnio <= minAnio) prevBtn.disabled = true;
+    if (historialAnio >= maxAnio) nextBtn.disabled = true;
+    nav.append(toggleBtn, prevBtn, anioLabel, nextBtn);
+  } else {
+    nav.append(toggleBtn);
+  }
+
+  // Botón añadir mes
+  const addBtn = el("button", {class:"btn", style:"font-size:11px;padding:4px 10px", onClick: openAddHistorial}, "+ Añadir mes");
+  nav.append(addBtn);
+  return nav;
+};
+
+const openAddHistorial = () => {
+  formData = {mes:"Ene", anio: new Date().getFullYear(), ingresos:0, gastos:0};
+  modalState = {type:"add", sec:"historial"};
+  // Modal personalizado para historial
+  document.getElementById("modal-overlay")?.remove();
+  const overlay = el("div", {class:"overlay", id:"modal-overlay", onClick: e=>{if(e.target===overlay)closeModal();}});
+  const modal = el("div", {class:"modal"});
+  modal.append(el("div", {class:"modal-header"},
+    el("span",{},"Añadir mes al historial"),
+    el("button",{onClick:closeModal,style:"background:none;border:none;font-size:18px;color:var(--text2);cursor:pointer"},"✕")
+  ));
+
+  const fields = [
+    {key:"mes", label:"Mes", type:"select", options: MESES_ORDEN},
+    {key:"anio", label:"Año", type:"number"},
+    {key:"ingresos", label:"Ingresos (€)", type:"number"},
+    {key:"gastos", label:"Gastos (€)", type:"number"},
+  ];
+  for (const {key,label,type,options} of fields) {
+    const lbl = el("label",{style:"font-size:12px;color:var(--text2);display:block;margin-bottom:4px;margin-top:12px"},label);
+    let inp;
+    if (type==="select") {
+      inp = el("select",{style:"font-family:inherit;background:var(--bg2);color:var(--text);border:0.5px solid var(--border2);border-radius:var(--radius);padding:7px 10px;font-size:14px;width:100%"});
+      options.forEach(o => { const opt=el("option",{value:o},o); if(o===formData[key]) opt.selected=true; inp.append(opt); });
+      inp.addEventListener("change",()=>{formData[key]=inp.value;});
+    } else {
+      inp = el("input",{type,value:formData[key]});
+      inp.addEventListener("input",()=>{formData[key]=type==="number"?parseFloat(inp.value)||0:inp.value;});
+    }
+    modal.append(lbl,inp);
+  }
+  const btns = el("div",{style:"display:flex;gap:8px;justify-content:flex-end;margin-top:16px"});
+  btns.append(
+    el("button",{class:"btn",onClick:closeModal},"Cancelar"),
+    el("button",{class:"btn btn-primary",onClick:()=>{
+      data.historial.push({...formData,id:Date.now()});
+      historialAnio = formData.anio;
+      save(); closeModal(); render();
+    }},"Guardar")
+  );
+  modal.append(btns);
+  overlay.append(modal);
+  document.body.append(overlay);
+};
+
+const renderHistorialChart = (containerId) => {
+  const hist = historialFiltrado();
+  const labels = hist.map(h => historialVista==="anio" ? String(h.anio) : `${h.mes} ${h.anio}`);
+  setTimeout(() => {
+    barChart(containerId, labels, [
+      {label:"Ingresos", data:hist.map(h=>h.ingresos), backgroundColor:COLORS.teal},
+      {label:"Gastos", data:hist.map(h=>h.gastos), backgroundColor:COLORS.coral},
+    ]);
+  }, 50);
+};
+
 const renderResumen = (t) => {
   const frag = document.createDocumentFragment();
   const grid = el("div", {class:"grid", style:"grid-template-columns:repeat(auto-fit,minmax(130px,1fr));margin-bottom:20px"});
@@ -286,8 +392,11 @@ const renderResumen = (t) => {
   );
 
   const card1 = el("div", {class:"card", style:"margin-bottom:14px"});
-  card1.innerHTML = `<h2 style="margin-bottom:12px">Evolución 6 meses</h2>
-    <div style="position:relative;height:200px"><canvas id="chart-hist" role="img" aria-label="Evolución de ingresos y gastos">Historial mensual de ingresos y gastos.</canvas></div>
+  const onPrev = () => { historialAnio--; render(); };
+  const onNext = () => { historialAnio++; render(); };
+  const onToggle = () => { historialVista = historialVista==="mes"?"anio":"mes"; render(); };
+  card1.append(historialNavBar(onPrev, onNext, onToggle));
+  card1.innerHTML += `<div style="position:relative;height:200px"><canvas id="chart-hist" role="img" aria-label="Evolución de ingresos y gastos">Historial.</canvas></div>
     <div style="display:flex;gap:16px;margin-top:10px;font-size:12px;color:var(--text2)">
       <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${COLORS.teal};margin-right:4px"></span>Ingresos</span>
       <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${COLORS.coral};margin-right:4px"></span>Gastos</span>
@@ -299,13 +408,8 @@ const renderResumen = (t) => {
   card2.innerHTML = `<h2 style="margin-bottom:12px">Desglose de gastos</h2><div style="position:relative;height:200px"><canvas id="chart-gastos" role="img" aria-label="Desglose de gastos por categoría">Gastos por categoría.</canvas></div>`;
 
   frag.append(grid, card1, card2);
-  setTimeout(() => {
-    barChart("chart-hist", data.historial.map(h=>h.mes), [
-      {label:"Ingresos", data:data.historial.map(h=>h.ingresos), backgroundColor:COLORS.teal},
-      {label:"Gastos", data:data.historial.map(h=>h.gastos), backgroundColor:COLORS.coral},
-    ]);
-    donutChart("chart-gastos", Object.keys(cats), Object.values(cats), COL_ARR.slice(0,Object.keys(cats).length));
-  }, 50);
+  renderHistorialChart("chart-hist");
+  setTimeout(() => donutChart("chart-gastos", Object.keys(cats), Object.values(cats), COL_ARR.slice(0,Object.keys(cats).length)), 50);
   return frag;
 };
 
@@ -471,10 +575,8 @@ const renderGraficos = (t) => {
   const cards = [
     {id:"chart-pat", title:"Composición del patrimonio", h:200,
      fn:()=>donutChart("chart-pat",["Inversiones","Ahorros","Deuda"],[t.tInv,t.tA,t.tD],[COLORS.blue,COLORS.teal,COLORS.coral])},
-    {id:"chart-evol", title:"Evolución 6 meses", h:200,
-     fn:()=>barChart("chart-evol", data.historial.map(h=>h.mes), [
-       {label:"Ingresos",data:data.historial.map(h=>h.ingresos),backgroundColor:COLORS.teal},
-       {label:"Gastos",data:data.historial.map(h=>h.gastos),backgroundColor:COLORS.coral}])},
+    {id:"chart-evol", title:"Evolución histórica", h:200,
+     fn:()=>renderHistorialChart("chart-evol")},
     {id:"chart-cart", title:"Cartera de inversiones", h:200,
      fn:()=>donutChart("chart-cart",data.inversiones.map(i=>i.nombre),data.inversiones.map(i=>i.valor),[COLORS.blue,COLORS.purple,COLORS.amber,COLORS.green])},
     {id:"chart-cats", title:"Gastos por categoría", h:200,
