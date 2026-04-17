@@ -1,0 +1,16 @@
+{
+  "name": "Finanzas Familiares",
+  "short_name": "Finanzas",
+  "description": "Dashboard de finanzas familiares personal",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1D9E75",
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Chart%20increasing/3D/chart_increasing_3d.png",
+      "sizes": "256x256",
+      "type": "image/png"
+    }
+  ]
+}
